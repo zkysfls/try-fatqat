@@ -1,0 +1,23 @@
+# Build environment for the try-fatqat JupyterLite site (runs on the host,
+# not in the browser). The in-browser environment is lite/try-fatqat-env.yaml.
+name: try-fatqat-build
+channels:
+  - conda-forge
+  - nodefaults
+dependencies:
+  - python=3.12
+  # JupyterLite:
+  - jupyterlab==4.6.2
+  - jupyter_server==2.20.0
+  - jupyterlite-core==0.8.1
+  - empack>=5.0.9
+  # Xeus Python kernel:
+  - jupyterlite-xeus>=3.1.6
+  - xeus-python==0.19.0
+  # Tutorial generation (fatqat's docs/mkdocs/tools/build_tutorials.py):
+  - nbformat
+  - pyyaml
+  - pip
+  - pip:
+      # Open notebooks via ?fromURL=...
+      - jupyterlab-open-url-parameter==0.4.0

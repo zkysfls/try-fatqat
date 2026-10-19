@@ -1,0 +1,10 @@
+{
+  "jupyter-config-data": {
+    "appName": "Try FatQat",
+    "defaultKernelName": "xpython",
+    "disabledExtensions": [
+      "@jupyterlite/javascript-kernel-extension",
+      "@jupyterlite/pyolite-kernel-extension"
+    ]
+  }
+}

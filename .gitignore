@@ -1,0 +1,5 @@
+_output/
+.jupyterlite.doit.db
+lite/files/tutorials/
+lite/.cache/
+__pycache__/

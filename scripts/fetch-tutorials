@@ -1,0 +1,62 @@
+#!/bin/bash
+# Generate the FatQat tutorial notebooks for the fatqat version pinned in
+# lite/try-fatqat-env.yaml, switch their simulators to runtime="numpy", and
+# copy them into lite/files/tutorials.
+set -euo pipefail
+
+ROOT=$(cd "$(dirname "$0")/.." && pwd)
+VERSION=$(sed -n 's/^ *- fatqat==\([^ ]*\) *$/\1/p' "$ROOT/lite/try-fatqat-env.yaml")
+if [ -z "$VERSION" ]; then
+    echo "no 'fatqat==<version>' pin found in lite/try-fatqat-env.yaml" >&2
+    exit 1
+fi
+
+WORK=$(mktemp -d)
+trap 'rm -rf "$WORK"' EXIT
+curl -fsSL "https://github.com/spaceqat/fatqat/archive/refs/tags/v${VERSION}.tar.gz" \
+    | tar -xz -C "$WORK"
+SOURCE=$(echo "$WORK"/fatqat-*)
+
+DEST="$ROOT/lite/files/tutorials"
+rm -rf "$DEST"
+mkdir -p "$DEST"
+# Render the same unexecuted notebooks the FatQat docs offer for download.
+# The tool's own entry point also renders the docs pages, which need cached
+# execution results that release tags do not ship.
+python - "$SOURCE/docs/mkdocs/tools" "$DEST" <<'PY'
+import sys
+from pathlib import Path
+
+import nbformat
+
+sys.path.insert(0, sys.argv[1])
+import build_tutorials
+
+# Tutorials that take long to run in the browser, measured in headless
+# Chromium. The note appears in the index and at the top of the notebook.
+SLOW = {
+    "atom-loss-erasure": "more than 15 minutes",
+}
+
+index = ["# FatQat tutorials", ""]
+for tutorial in build_tutorials.discover_tutorials():
+    source = tutorial.source
+    notebook = build_tutorials._render_notebook(tutorial)
+    entry = f"- [{source.title}]({tutorial.slug}.ipynb): {source.description}"
+    if duration := SLOW.pop(tutorial.slug, None):
+        parsed = nbformat.reads(notebook, as_version=4)
+        note = (
+            f"**Slow in the browser:** this tutorial takes {duration} to run "
+            "here. For faster results, install FatQat locally with "
+            "`pip install fatqat`."
+        )
+        parsed.cells.insert(0, nbformat.v4.new_markdown_cell(note, id="browser-note"))
+        notebook = nbformat.writes(parsed)
+        entry += f" *Slow in the browser: {duration}.*"
+    Path(sys.argv[2], f"{tutorial.slug}.ipynb").write_text(notebook, encoding="utf-8")
+    index.append(entry)
+if SLOW:
+    raise SystemExit(f"unknown tutorials in SLOW: {sorted(SLOW)}")
+Path(sys.argv[2], "README.md").write_text("\n".join(index) + "\n", encoding="utf-8")
+PY
+python "$ROOT/scripts/numpy_runtime.py" "$DEST"/*.ipynb
