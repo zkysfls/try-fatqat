@@ -14,10 +14,11 @@ computation runs in the visitor's browser. Performance is not a goal.
 - numba has no WebAssembly build, so `jupyterlite-xeus` installs FatQat with
   pip's `--no-deps`, and the remaining dependencies (NumPy, SciPy, Matplotlib,
   QuTiP) come from emscripten-forge. See `lite/try-fatqat-env.yaml`.
-- FatQat simulators default to `runtime="numba"`, which is unavailable here.
-  `scripts/numpy_runtime.py` rewrites the tutorial notebooks so every
-  `Simulator`, `AtomArraySimulator`, and `SCQubitSimulator` passes
-  `runtime="numpy"`, and fails the build if one does not.
+- FatQat simulators default to `runtime="numba"`, which is unavailable here,
+  so the site offers only the tutorials that run without numba: every
+  `Simulator`, `AtomArraySimulator`, and `SCQubitSimulator` they create passes
+  `runtime="numpy"`, and none imports numba. The site is for trying FatQat;
+  the documentation has every tutorial.
 
 ## Staying in step with FatQat
 
@@ -27,7 +28,7 @@ final release. Set `FATQAT_VERSION` to build another release.
 
 - It pins `fatqat` to that release in `lite/try-fatqat-env.pinned.yaml`, the
   environment file `scripts/jl-build` uses.
-- It renders the tutorials from the release's git tag into
+- It renders the release's numba-free tutorials from its git tag into
   `lite/files/tutorials/<category>/`, following the category folders of the
   FatQat documentation, and writes an index grouped the same way. Notebooks and
   the installed package therefore always come from the same release.

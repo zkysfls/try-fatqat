@@ -3,8 +3,8 @@
 - Pin fatqat in the in-browser environment to the release, writing
   lite/try-fatqat-env.pinned.yaml for scripts/jl-build.
 - Check that the environment provides every dependency of the release.
-- Render the release's tutorials into lite/files/tutorials/<category>/, with
-  every simulator switched to runtime="numpy".
+- Render the release's tutorials that run without numba into
+  lite/files/tutorials/<category>/.
 
 The latest release is the newest final release on PyPI, or the newest
 pre-release while there is no final release. Set FATQAT_VERSION to use another
@@ -15,6 +15,7 @@ Usage: python scripts/sync_fatqat.py
 
 from __future__ import annotations
 
+import ast
 import io
 import json
 import os
@@ -29,8 +30,6 @@ from pathlib import Path
 import nbformat
 import yaml
 
-from numpy_runtime import to_numpy_runtime
-
 ROOT = Path(__file__).resolve().parents[1]
 ENV_FILE = ROOT / "lite" / "try-fatqat-env.yaml"
 PINNED_ENV_FILE = ROOT / "lite" / "try-fatqat-env.pinned.yaml"
@@ -40,11 +39,8 @@ TUTORIALS = ROOT / "lite" / "files" / "tutorials"
 # every simulator uses runtime="numpy" and execution stays in one process.
 BROWSER_EXCLUDED = {"numba", "loky"}
 
-# Tutorials that take long to run in the browser, measured in headless
-# Chromium. The note appears in the index and at the top of the notebook.
-SLOW = {
-    "atom-loss-erasure": "more than 15 minutes",
-}
+# Public FatQat classes whose constructor takes ``runtime``, default "numba".
+SIMULATORS = {"Simulator", "AtomArraySimulator", "SCQubitSimulator"}
 
 
 def _get_json(url: str) -> dict:
@@ -91,6 +87,37 @@ def pin_environment(version: str) -> None:
     PINNED_ENV_FILE.write_text(pinned)
 
 
+def _runs_on_numba(call: ast.Call) -> bool:
+    func = call.func
+    name = func.id if isinstance(func, ast.Name) else getattr(func, "attr", None)
+    if name not in SIMULATORS:
+        return False
+    runtime = next((kw.value for kw in call.keywords if kw.arg == "runtime"), None)
+    return not (isinstance(runtime, ast.Constant) and runtime.value == "numpy")
+
+
+def uses_numba(code: str) -> bool:
+    """Return whether ``code`` imports numba or creates a simulator that runs on it.
+
+    A simulator runs on numba unless its call passes ``runtime="numpy"``
+    literally, so calls that leave the runtime to ``**kwargs`` or a variable
+    count as numba.
+    """
+
+    for node in ast.walk(ast.parse(code)):
+        if isinstance(node, ast.Call) and _runs_on_numba(node):
+            return True
+        if isinstance(node, ast.Import) and any(
+            alias.name.split(".")[0] == "numba" for alias in node.names
+        ):
+            return True
+        if isinstance(node, ast.ImportFrom) and (
+            (node.module or "").split(".")[0] == "numba"
+        ):
+            return True
+    return False
+
+
 def download_source(version: str, directory: str) -> Path:
     url = f"https://github.com/spaceqat/fatqat/archive/refs/tags/v{version}.tar.gz"
     with urllib.request.urlopen(url, timeout=120) as response:
@@ -108,7 +135,10 @@ def render_tutorials(source: Path, version: str) -> None:
     sys.path.insert(0, str(source / "docs" / "mkdocs" / "tools"))
     import build_tutorials
 
-    tutorials = build_tutorials.discover_tutorials()
+    tutorials, skipped = [], []
+    for tutorial in build_tutorials.discover_tutorials():
+        needs_numba = any(uses_numba(code) for code in tutorial.code_cells)
+        (skipped if needs_numba else tutorials).append(tutorial)
     order = list(build_tutorials.GALLERY.get("category_order", []))
     categories = sorted(
         {tutorial.category for tutorial in tutorials},
@@ -119,44 +149,29 @@ def render_tutorials(source: Path, version: str) -> None:
     )
 
     shutil.rmtree(TUTORIALS, ignore_errors=True)
-    index = ["# FatQat tutorials", "", f"From FatQat {version}.", ""]
-    slow = dict(SLOW)
+    index = [
+        "# FatQat tutorials",
+        "",
+        f"The FatQat {version} tutorials that run without numba. Find all of them "
+        "in the [FatQat documentation](https://fatqat.readthedocs.io/en/stable/tutorials/).",
+        "",
+    ]
     for category in categories:
         title, description = build_tutorials._category_label(category)
         index += [f"## {title}", "", description, ""]
         for tutorial in (item for item in tutorials if item.category == category):
-            source_info = tutorial.source
-            notebook = nbformat.reads(
-                build_tutorials._render_notebook(tutorial), as_version=4
-            )
-            entry = (
-                f"- [{source_info.title}]({category}/{tutorial.slug}.ipynb): "
-                f"{source_info.description}"
-            )
-            if duration := slow.pop(tutorial.slug, None):
-                note = (
-                    f"**Slow in the browser:** this tutorial takes {duration} to "
-                    "run here. For faster results, install FatQat locally with "
-                    "`pip install fatqat`."
-                )
-                notebook.cells.insert(
-                    0, nbformat.v4.new_markdown_cell(note, id="browser-note")
-                )
-                entry += f" *Slow in the browser: {duration}.*"
-            try:
-                changed = to_numpy_runtime(notebook)
-            except ValueError as error:
-                raise SystemExit(f"{tutorial.slug}: {error}") from error
             path = TUTORIALS / category / f"{tutorial.slug}.ipynb"
             path.parent.mkdir(parents=True, exist_ok=True)
-            nbformat.write(notebook, path)
-            index.append(entry)
-            print(f"{path.relative_to(ROOT)}: {changed} cell(s) switched to NumPy")
+            path.write_text(build_tutorials._render_notebook(tutorial), encoding="utf-8")
+            index.append(
+                f"- [{tutorial.source.title}]({category}/{tutorial.slug}.ipynb): "
+                f"{tutorial.source.description}"
+            )
+            print(f"Added {path.relative_to(ROOT)}")
         index.append("")
-    for slug in slow:
-        print(f"warning: SLOW names a tutorial that does not exist: {slug}")
     (TUTORIALS / "README.md").write_text("\n".join(index), encoding="utf-8")
-
+    for tutorial in skipped:
+        print(f"Skipped {tutorial.category}/{tutorial.slug}: uses numba")
 
 def main() -> int:
     version = os.environ.get("FATQAT_VERSION") or latest_release()
