@@ -75,21 +75,35 @@ def check(source: str) -> None:
             raise ValueError(f"line {call.lineno}: simulator does not use runtime='numpy'")
 
 
+def to_numpy_runtime(notebook: nbformat.NotebookNode) -> int:
+    """Switch the simulators in ``notebook`` to NumPy in place.
+
+    Returns the number of code cells changed. Raises ``ValueError`` naming the
+    code cell when a simulator call cannot be switched.
+    """
+
+    changed = 0
+    for index, cell in enumerate(notebook.cells):
+        if cell.cell_type != "code":
+            continue
+        try:
+            source = rewrite(cell.source)
+            check(source)
+        except (SyntaxError, ValueError) as error:
+            raise ValueError(f"code cell {index}: {error}") from error
+        if source != cell.source:
+            cell.source = source
+            changed += 1
+    return changed
+
+
 def main(paths: list[str]) -> int:
     for path in paths:
         notebook = nbformat.read(path, as_version=4)
-        changed = 0
-        for index, cell in enumerate(notebook.cells):
-            if cell.cell_type != "code":
-                continue
-            try:
-                source = rewrite(cell.source)
-                check(source)
-            except (SyntaxError, ValueError) as error:
-                raise SystemExit(f"{path}: code cell {index}: {error}") from error
-            if source != cell.source:
-                cell.source = source
-                changed += 1
+        try:
+            changed = to_numpy_runtime(notebook)
+        except ValueError as error:
+            raise SystemExit(f"{path}: {error}") from error
         nbformat.write(notebook, path)
         print(f"{path}: {changed} cell(s) switched to runtime='numpy'")
     return 0

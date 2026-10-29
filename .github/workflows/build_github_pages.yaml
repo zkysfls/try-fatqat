@@ -4,6 +4,9 @@ on:
   push:
   pull_request:
   workflow_dispatch:
+  # Pick up new FatQat releases.
+  schedule:
+    - cron: "23 3 * * *"
 
 defaults:
   run:
@@ -23,8 +26,8 @@ jobs:
           activate-environment: try-fatqat-build
           environment-file: environment.yml
 
-      - name: Generate tutorial notebooks
-        run: ./scripts/fetch-tutorials
+      - name: Prepare the latest FatQat release
+        run: python scripts/sync_fatqat.py
 
       - name: Build JupyterLite
         run: |

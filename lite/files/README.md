@@ -8,7 +8,7 @@ so it can take a minute; later visits reuse the browser cache.
 - Start with [quickstart.ipynb](quickstart.ipynb): build, draw, and run a
   Bell-state Program.
 - Then open the [tutorials](tutorials/README.md), the same case studies as the
-  [FatQat documentation](https://fatqat.readthedocs.io/en/latest/tutorials/).
+  [FatQat documentation](https://fatqat.readthedocs.io/en/stable/tutorials/).
 
 ## Differences from a local installation
 
